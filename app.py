@@ -7,21 +7,95 @@ st.set_page_config(page_title='현대그린푸드 | 센트럴키친 원가분석
 st.title('🥗 현대그린푸드 | 센트럴키친 원가절감 효과 분석기')
 st.caption('생성형 AI 활용 구현 · 관리회계 시뮬레이션 · 실제 회사 내부 원가자료 아님')
 st.info('**자료 구분:** 2026년 상반기 연결 매출 1조 2,165억원·영업이익 845억원은 첨부 심층분석보고서 및 공시 기반 참고치입니다. 아래 식수·단가·생산원가·가동률은 전부 분석용 가정이며 현대그린푸드 실제 내부 수치가 아닙니다.')
+# 입력 가정은 모두 시뮬레이션용이며 실제 회사의 내부 원가가 아닙니다.
+DEFAULTS = {
+    'meals': 100000, 'field_mat': 2100, 'field_labor': 950,
+    'field_other': 150, 'field_fixed': 18000000, 'ck_mat': 1900,
+    'ck_labor': 330, 'ck_other': 190, 'ck_log': 280,
+    'ck_field': 240, 'ck_fixed': 43000000,
+}
+PRESETS = {
+    '기본 시나리오': {},
+    '식수 감소 (기본 대비 30% 감소)': {'meals': 70000},
+    '물류비 상승 (기본 대비 30% 증가)': {'ck_log': 364},
+}
+
+def load_preset(name):
+    st.session_state['scenario'] = name
+    values = {**DEFAULTS, **PRESETS[name]}
+    for key, value in values.items():
+        st.session_state['input_' + key] = value
+
+def reset_inputs():
+    load_preset('기본 시나리오')
+
+if 'scenario' not in st.session_state:
+    load_preset('기본 시나리오')
+if 'applied_inputs' not in st.session_state:
+    st.session_state['applied_inputs'] = DEFAULTS.copy()
+
 with st.sidebar:
- st.header('⚙️ 분석 가정 (가상)')
- meals=st.number_input('월 공급 식수 (식)',1000,1000000,100000,1000)
- field_mat=st.number_input('현장 조리: 식당 원재료비 (원/식)',0,20000,2100,50)
- field_labor=st.number_input('현장 조리: 식당 인건비 (원/식)',0,20000,950,50)
- field_other=st.number_input('현장 조리: 기타 변동비 (원/식)',0,20000,150,50)
- field_fixed=st.number_input('현장 조리: 월 고정비 (원)',0,1000000000,18000000,1000000)
- ck_mat=st.number_input('CK: 표준 원재료비 (원/식)',0,20000,1900,50)
- ck_labor=st.number_input('CK: 중앙생산 인건비 (원/식)',0,20000,330,10)
- ck_other=st.number_input('CK: 포장·가공 변동비 (원/식)',0,20000,190,10)
- ck_log=st.number_input('CK: 배송비 (원/식)',0,20000,280,10)
- ck_field=st.number_input('CK 도입 후 현장 마무리비 (원/식)',0,20000,240,10)
- ck_fixed=st.number_input('CK: 월 고정비 배부액 (원)',0,1000000000,43000000,1000000)
- st.divider()
- st.caption('가정은 자유롭게 수정할 수 있습니다. 현장/CK 비용 범위가 동일하도록 설정하세요.')
+    st.header('⚙️ 분석 조건 설정')
+    st.caption('① 시나리오 선택 → ② 월 식수 확인 → ③ 필요 시 세부 원가 수정 → ④ 분석 실행')
+    st.warning('모든 입력값은 가상 가정이며 현대그린푸드의 실제 내부 원가가 아닙니다.', icon='ℹ️')
+
+    st.subheader('STEP 1 · 시나리오 선택')
+    scenario = st.radio(
+        '어떤 상황을 분석할까요?', list(PRESETS),
+        key='scenario', on_change=lambda: load_preset(st.session_state['scenario']),
+        help='시나리오를 변경하면 입력 중인 값이 해당 시나리오의 기본값으로 바뀝니다.',
+    )
+    st.caption('다른 시나리오를 선택하면 아래 입력값이 자동 설정됩니다.')
+
+    st.subheader('STEP 2 · 월 공급 식수')
+    st.number_input(
+        '한 달 동안 공급하는 식사 수 (식/월)',
+        min_value=1000, max_value=1000000, step=1000,
+        key='input_meals', help='현장 조리 방식과 센트럴키친 방식에 동일한 공급 식수를 적용합니다.',
+    )
+
+    st.subheader('STEP 3 · 세부 원가 (선택)')
+    st.caption('처음에는 수정하지 않아도 됩니다. 원가 구조를 직접 검토할 때만 펼쳐주세요.')
+    with st.expander('🏠 기존 현장 조리 방식의 비용', expanded=False):
+        st.caption('식사 1개를 현장에서 직접 조리하는 경우')
+        st.number_input('식재료 구매비 (원/식)', 0, 20000, step=50, key='input_field_mat', help='식사 한 개에 투입되는 식재료의 구매원가')
+        st.number_input('현장 조리 인건비 (원/식)', 0, 20000, step=50, key='input_field_labor', help='현장 조리 인력의 식사 한 개당 인건비')
+        st.number_input('기타 변동비 (원/식)', 0, 20000, step=50, key='input_field_other', help='식수가 늘어날수록 함께 증가하는 기타 비용')
+        st.number_input('월 고정비 (원/월)', 0, 1000000000, step=1000000, key='input_field_fixed', help='식수와 무관하게 매월 발생하는 임차료·설비비 등의 가정액')
+    with st.expander('🏭 센트럴키친(중앙생산) 방식의 비용', expanded=False):
+        st.caption('중앙시설에서 가공해 현장에 공급하는 경우')
+        st.number_input('중앙생산 식재료비 (원/식)', 0, 20000, step=50, key='input_ck_mat', help='중앙시설에서 식사 한 개 분량을 생산할 때의 표준 식재료비')
+        st.number_input('중앙생산 인건비 (원/식)', 0, 20000, step=10, key='input_ck_labor', help='중앙시설의 식사 한 개당 직접 인건비')
+        st.number_input('포장·가공 변동비 (원/식)', 0, 20000, step=10, key='input_ck_other', help='포장재 및 가공 과정에서 발생하는 식사 한 개당 변동비')
+        st.number_input('배송·물류비 (원/식)', 0, 20000, step=10, key='input_ck_log', help='중앙시설에서 각 급식사업장까지 운송하는 비용')
+        st.number_input('현장 마무리 조리비 (원/식)', 0, 20000, step=10, key='input_ck_field', help='중앙생산 후 현장에서 재가열·배식 등을 위해 발생하는 비용')
+        st.number_input('중앙시설 월 고정비 배부액 (원/월)', 0, 1000000000, step=1000000, key='input_ck_fixed', help='중앙시설의 설비비·감가상각비 등에서 해당 분석 대상에 배분한 월 고정비')
+
+    col_run, col_reset = st.columns([2, 1])
+    with col_run:
+        if st.button('📊 분석 실행', type='primary', use_container_width=True):
+            st.session_state['applied_inputs'] = {k: st.session_state['input_' + k] for k in DEFAULTS}
+            st.session_state['applied_scenario'] = st.session_state['scenario']
+            st.toast('입력한 조건을 분석에 반영했습니다.')
+    with col_reset:
+        if st.button('↺ 초기화', use_container_width=True):
+            reset_inputs()
+            st.session_state['applied_inputs'] = DEFAULTS.copy()
+            st.session_state['applied_scenario'] = '기본 시나리오'
+            st.rerun()
+    st.caption('분석 실행을 누르기 전에는 기존 결과가 유지됩니다.')
+
+inputs = st.session_state['applied_inputs']
+meals = inputs['meals']
+field_mat, field_labor = inputs['field_mat'], inputs['field_labor']
+field_other, field_fixed = inputs['field_other'], inputs['field_fixed']
+ck_mat, ck_labor = inputs['ck_mat'], inputs['ck_labor']
+ck_other, ck_log = inputs['ck_other'], inputs['ck_log']
+ck_field, ck_fixed = inputs['ck_field'], inputs['ck_fixed']
+st.caption(f"현재 분석에 적용된 월 공급 식수: **{meals:,}식** · 세부 원가 단위: 원/식, 고정비는 원/월")
+if any(st.session_state['input_' + k] != inputs[k] for k in DEFAULTS):
+    st.info('왼쪽 입력값이 변경되었습니다. **분석 실행**을 눌러 결과에 반영하세요.')
+
 field_var=field_mat+field_labor+field_other
 ck_var=ck_mat+ck_labor+ck_other+ck_log+ck_field
 field_total=meals*field_var+field_fixed

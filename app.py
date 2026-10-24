@@ -17,15 +17,21 @@ DEFAULTS = {
 SCENARIOS = ['기본 시나리오', '식수 변화 분석', '물류비 변화 분석']
 
 def apply_scenario():
-    """입력 시나리오의 변화율을 가상 기준값에 적용한다."""
+    """사용자가 지정한 기준값에 변화율을 적용해 분석 입력을 동기화한다."""
     mode = st.session_state.get('scenario', SCENARIOS[0])
-    st.session_state['input_meals'] = max(1000, round(DEFAULTS['meals'] * (1 + st.session_state.get('meal_change_pct', 0) / 100))) if mode == SCENARIOS[1] else DEFAULTS['meals']
-    st.session_state['input_ck_log'] = max(0, round(DEFAULTS['ck_log'] * (1 + st.session_state.get('log_change_pct', 0) / 100))) if mode == SCENARIOS[2] else DEFAULTS['ck_log']
+    base_meals = st.session_state['base_meals']
+    base_log = st.session_state['base_ck_log']
+    meal_pct = st.session_state.get('meal_change_pct', 0) if mode == SCENARIOS[1] else 0
+    log_pct = st.session_state.get('log_change_pct', 0) if mode == SCENARIOS[2] else 0
+    st.session_state['input_meals'] = max(1000, round(base_meals * (1 + meal_pct / 100)))
+    st.session_state['input_ck_log'] = max(0, round(base_log * (1 + log_pct / 100)))
 
 def reset_inputs():
     st.session_state['scenario'] = SCENARIOS[0]
     st.session_state['meal_change_pct'] = 0
     st.session_state['log_change_pct'] = 0
+    st.session_state['base_meals'] = DEFAULTS['meals']
+    st.session_state['base_ck_log'] = DEFAULTS['ck_log']
     for key, value in DEFAULTS.items():
         st.session_state['input_' + key] = value
 
@@ -35,6 +41,10 @@ if 'meal_change_pct' not in st.session_state:
     st.session_state['meal_change_pct'] = 0
 if 'log_change_pct' not in st.session_state:
     st.session_state['log_change_pct'] = 0
+if 'base_meals' not in st.session_state:
+    st.session_state['base_meals'] = DEFAULTS['meals']
+if 'base_ck_log' not in st.session_state:
+    st.session_state['base_ck_log'] = DEFAULTS['ck_log']
 for key, value in DEFAULTS.items():
     if 'input_' + key not in st.session_state:
         st.session_state['input_' + key] = value
@@ -43,37 +53,48 @@ if 'applied_inputs' not in st.session_state:
 
 with st.sidebar:
     st.header('⚙️ 분석 조건 설정')
-    st.caption('① 시나리오 선택 → ② 월 식수 확인 → ③ 필요 시 세부 원가 수정 → ④ 분석 실행')
-    st.warning('모든 입력값은 가상 가정이며 현대그린푸드의 실제 내부 원가가 아닙니다.', icon='ℹ️')
+    st.caption('① 기준값 입력 → ② 분석 유형 선택 → ③ 변화 조건 확인 → ④ 세부 원가 설정 → ⑤ 분석 실행')
+    st.warning('초기 표시된 수치는 **설명용 가상 예시값**입니다. 현대그린푸드의 실제 식수·물류비가 아닙니다.', icon='ℹ️')
 
-    st.subheader('STEP 1 · 시나리오 선택')
+    st.subheader('STEP 1 · 기준값 입력')
+    st.caption('분석을 시작하기 전에 비교의 출발점이 되는 값을 입력하세요.')
+    st.number_input(
+        '기준 월 공급 식수 (식/월)', min_value=1000, max_value=1000000,
+        step=1000, key='base_meals', on_change=apply_scenario,
+        help='변화가 발생하기 전 한 달 동안 공급하는 식사 수입니다. 최초 100,000식은 설명용 예시입니다.',
+    )
+    st.number_input(
+        '기준 식수당 물류비 (원/식)', min_value=0, max_value=20000,
+        step=10, key='base_ck_log', on_change=apply_scenario,
+        help='변화가 발생하기 전 식사 한 끼당 배송·물류비입니다. 최초 280원은 설명용 예시입니다.',
+    )
+    st.caption('※ 실제 내부 자료가 있다면 위 예시값을 교체하세요. 물류비는 식수당 단가이며 월 물류비는 식수 × 단가로 계산합니다.')
+
+    st.subheader('STEP 2 · 분석 유형 선택')
     scenario = st.radio(
         '어떤 상황을 분석할까요?', SCENARIOS,
         key='scenario', on_change=apply_scenario,
-        help='식수 또는 물류비의 변화를 직접 설정할 수 있습니다. 변화율은 회사 실적이 아닌 분석용 가정입니다.',
+        help='STEP 1의 사용자 입력 기준값에 변화율을 적용합니다.',
     )
     if scenario == SCENARIOS[1]:
-        st.slider('기본 대비 식수 변화율 (%)', min_value=-80, max_value=100,
+        st.slider('기준 대비 식수 변화율 (%)', min_value=-80, max_value=100,
                   step=5, key='meal_change_pct', on_change=apply_scenario,
-                  help='0%는 월 100,000식이라는 가상 기준을 의미합니다. 마이너스는 감소, 플러스는 증가입니다.')
-        st.caption(f"가상 기준 {DEFAULTS['meals']:,}식 × (1 + 변화율) → 월 {st.session_state['input_meals']:,}식")
+                  help='STEP 1에서 입력한 기준 월 공급 식수에 적용합니다.')
     elif scenario == SCENARIOS[2]:
-        st.slider('기본 대비 물류비 변화율 (%)', min_value=-80, max_value=200,
+        st.slider('기준 대비 물류비 변화율 (%)', min_value=-80, max_value=200,
                   step=5, key='log_change_pct', on_change=apply_scenario,
-                  help='0%는 식당 280원이라는 가상 기준을 의미합니다. 마이너스는 감소, 플러스는 증가입니다.')
-        st.caption(f"가상 기준 {DEFAULTS['ck_log']:,}원/식 × (1 + 변화율) → {st.session_state['input_ck_log']:,}원/식")
+                  help='STEP 1에서 입력한 기준 식수당 물류비에 적용합니다.')
     else:
-        st.caption('가상 기준값으로 분석합니다. 아래에서 식수와 세부 원가를 직접 수정할 수 있습니다.')
-    st.caption('변화율은 사용자가 선택하는 민감도 분석 조건이며, 특정 변화율을 예측하거나 권장하지 않습니다.')
+        st.caption('변화율 없이 입력한 기준값 그대로 분석합니다.')
+    st.caption('변화율은 사용자가 설정하는 민감도 분석 조건이며, 실제 회사의 전망치가 아닙니다.')
 
-    st.subheader('STEP 2 · 월 공급 식수')
-    st.number_input(
-        '한 달 동안 공급하는 식사 수 (식/월)',
-        min_value=1000, max_value=1000000, step=1000,
-        key='input_meals', help='현장 조리 방식과 센트럴키친 방식에 동일한 공급 식수를 적용합니다.',
-    )
+    st.subheader('STEP 3 · 적용값 확인')
+    st.metric('분석에 적용되는 월 공급 식수', f"{st.session_state['input_meals']:,}식")
+    st.metric('분석에 적용되는 식수당 물류비', f"{st.session_state['input_ck_log']:,}원/식")
+    st.caption(f"월 물류비 합계: {st.session_state['input_meals'] * st.session_state['input_ck_log']:,}원 (식수 × 식수당 물류비)")
+    st.caption('적용값은 STEP 1의 기준값과 STEP 2의 변화율로 자동 계산되므로 중복 입력하지 않습니다.')
 
-    st.subheader('STEP 3 · 세부 원가 (선택)')
+    st.subheader('STEP 4 · 세부 원가 (선택)')
     st.caption('처음에는 수정하지 않아도 됩니다. 원가 구조를 직접 검토할 때만 펼쳐주세요.')
     with st.expander('🏠 기존 현장 조리 방식의 비용', expanded=False):
         st.caption('식사 1개를 현장에서 직접 조리하는 경우')
@@ -86,7 +107,7 @@ with st.sidebar:
         st.number_input('중앙생산 식재료비 (원/식)', 0, 20000, step=50, key='input_ck_mat', help='중앙시설에서 식사 한 개 분량을 생산할 때의 표준 식재료비')
         st.number_input('중앙생산 인건비 (원/식)', 0, 20000, step=10, key='input_ck_labor', help='중앙시설의 식사 한 개당 직접 인건비')
         st.number_input('포장·가공 변동비 (원/식)', 0, 20000, step=10, key='input_ck_other', help='포장재 및 가공 과정에서 발생하는 식사 한 개당 변동비')
-        st.number_input('배송·물류비 (원/식)', 0, 20000, step=10, key='input_ck_log', help='중앙시설에서 각 급식사업장까지 운송하는 비용')
+        st.caption('배송·물류비는 STEP 1의 기준값과 STEP 2의 변화율에서 설정합니다. STEP 3에서 적용값을 확인하세요.')
         st.number_input('현장 마무리 조리비 (원/식)', 0, 20000, step=10, key='input_ck_field', help='중앙생산 후 현장에서 재가열·배식 등을 위해 발생하는 비용')
         st.number_input('중앙시설 월 고정비 배부액 (원/월)', 0, 1000000000, step=1000000, key='input_ck_fixed', help='중앙시설의 설비비·감가상각비 등에서 해당 분석 대상에 배분한 월 고정비')
 
@@ -102,7 +123,7 @@ with st.sidebar:
             st.session_state['applied_inputs'] = DEFAULTS.copy()
             st.session_state['applied_scenario'] = '기본 시나리오'
             st.rerun()
-    st.caption('분석 실행을 누르기 전에는 기존 결과가 유지됩니다.')
+    st.caption('STEP 5 · 분석 실행: 버튼을 누르기 전에는 기존 결과가 유지됩니다.')
 
 inputs = st.session_state['applied_inputs']
 meals = inputs['meals']

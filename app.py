@@ -14,23 +14,30 @@ DEFAULTS = {
     'ck_labor': 330, 'ck_other': 190, 'ck_log': 280,
     'ck_field': 240, 'ck_fixed': 43000000,
 }
-PRESETS = {
-    '기본 시나리오': {},
-    '식수 감소 (기본 대비 30% 감소)': {'meals': 70000},
-    '물류비 상승 (기본 대비 30% 증가)': {'ck_log': 364},
-}
+SCENARIOS = ['기본 시나리오', '식수 변화 분석', '물류비 변화 분석']
 
-def load_preset(name):
-    st.session_state['scenario'] = name
-    values = {**DEFAULTS, **PRESETS[name]}
-    for key, value in values.items():
-        st.session_state['input_' + key] = value
+def apply_scenario():
+    """입력 시나리오의 변화율을 가상 기준값에 적용한다."""
+    mode = st.session_state.get('scenario', SCENARIOS[0])
+    st.session_state['input_meals'] = max(1000, round(DEFAULTS['meals'] * (1 + st.session_state.get('meal_change_pct', 0) / 100))) if mode == SCENARIOS[1] else DEFAULTS['meals']
+    st.session_state['input_ck_log'] = max(0, round(DEFAULTS['ck_log'] * (1 + st.session_state.get('log_change_pct', 0) / 100))) if mode == SCENARIOS[2] else DEFAULTS['ck_log']
 
 def reset_inputs():
-    load_preset('기본 시나리오')
+    st.session_state['scenario'] = SCENARIOS[0]
+    st.session_state['meal_change_pct'] = 0
+    st.session_state['log_change_pct'] = 0
+    for key, value in DEFAULTS.items():
+        st.session_state['input_' + key] = value
 
 if 'scenario' not in st.session_state:
-    load_preset('기본 시나리오')
+    st.session_state['scenario'] = SCENARIOS[0]
+if 'meal_change_pct' not in st.session_state:
+    st.session_state['meal_change_pct'] = 0
+if 'log_change_pct' not in st.session_state:
+    st.session_state['log_change_pct'] = 0
+for key, value in DEFAULTS.items():
+    if 'input_' + key not in st.session_state:
+        st.session_state['input_' + key] = value
 if 'applied_inputs' not in st.session_state:
     st.session_state['applied_inputs'] = DEFAULTS.copy()
 
@@ -41,11 +48,23 @@ with st.sidebar:
 
     st.subheader('STEP 1 · 시나리오 선택')
     scenario = st.radio(
-        '어떤 상황을 분석할까요?', list(PRESETS),
-        key='scenario', on_change=lambda: load_preset(st.session_state['scenario']),
-        help='시나리오를 변경하면 입력 중인 값이 해당 시나리오의 기본값으로 바뀝니다.',
+        '어떤 상황을 분석할까요?', SCENARIOS,
+        key='scenario', on_change=apply_scenario,
+        help='식수 또는 물류비의 변화를 직접 설정할 수 있습니다. 변화율은 회사 실적이 아닌 분석용 가정입니다.',
     )
-    st.caption('다른 시나리오를 선택하면 아래 입력값이 자동 설정됩니다.')
+    if scenario == SCENARIOS[1]:
+        st.slider('기본 대비 식수 변화율 (%)', min_value=-80, max_value=100,
+                  step=5, key='meal_change_pct', on_change=apply_scenario,
+                  help='0%는 월 100,000식이라는 가상 기준을 의미합니다. 마이너스는 감소, 플러스는 증가입니다.')
+        st.caption(f"가상 기준 {DEFAULTS['meals']:,}식 × (1 + 변화율) → 월 {st.session_state['input_meals']:,}식")
+    elif scenario == SCENARIOS[2]:
+        st.slider('기본 대비 물류비 변화율 (%)', min_value=-80, max_value=200,
+                  step=5, key='log_change_pct', on_change=apply_scenario,
+                  help='0%는 식당 280원이라는 가상 기준을 의미합니다. 마이너스는 감소, 플러스는 증가입니다.')
+        st.caption(f"가상 기준 {DEFAULTS['ck_log']:,}원/식 × (1 + 변화율) → {st.session_state['input_ck_log']:,}원/식")
+    else:
+        st.caption('가상 기준값으로 분석합니다. 아래에서 식수와 세부 원가를 직접 수정할 수 있습니다.')
+    st.caption('변화율은 사용자가 선택하는 민감도 분석 조건이며, 특정 변화율을 예측하거나 권장하지 않습니다.')
 
     st.subheader('STEP 2 · 월 공급 식수')
     st.number_input(
@@ -168,6 +187,7 @@ with tabs[3]:
  chart=pd.DataFrame({'월 식수':values,'현장 조리':[v*field_var+field_fixed for v in values],'CK 중앙생산':[v*ck_var+ck_fixed for v in values]})
  st.plotly_chart(px.line(chart,x='월 식수',y=['현장 조리','CK 중앙생산'],labels={'value':'월 총원가(원)','variable':'방식'},markers=True),use_container_width=True)
  st.write('**민감도: CK 물류비와 공급 식수 변화에 따른 월 절감액(만원)**')
+ st.caption('아래 70%·100%·130% 식수는 계산 구조를 보여주기 위한 예시 구간입니다. 실제 수요 전망은 아닙니다.')
  scenarios=[]
  for m in [0.7,1.0,1.3]:
   row={'식수 변화':f'{m:.0%}'}
